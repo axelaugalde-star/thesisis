@@ -1,0 +1,86 @@
+---
+title: "pelodiscussinensisPH"
+author: "Axela Keeza T. Ugalde"
+date: "`r Sys.Date()`"
+output: html_document
+---
+# Activity 10 - Geographic Information System: Creating Your First Map {.tabset .tabset-fade .tabset-pills}
+  
+## A. Retrieving spatial data
+```{r setup, echo = TRUE, warning = TRUE, fig.align = "center"}
+library(sf)
+library(terra)
+library(dplyr)
+library(ggplot2)
+library(ggnewscale)
+library(tidyverse)
+
+# Read CSV
+my_data <- read.csv("occurrence - Pelodiscus sinensis.csv")
+
+# Clean and Subset
+clean_data <- my_data |>
+  filter(!is.na(decimalLatitude) & !is.na(decimalLongitude))
+
+target_provinces <- st_read("PHL_adm1.shp") |>
+  st_transform(4326) |>
+  st_make_valid()
+
+# Elevation
+phil_dem <- rast("ph_ strm_geo.tif")
+dem_resampled <- aggregate(phil_dem, fact = 4, fun = mean)
+
+if (st_crs(target_provinces) != st_crs(dem_resampled)) {
+  target_provinces <- st_transform(target_provinces, st_crs(dem_resampled))
+}
+dem_clipped <- crop(dem_resampled, target_provinces) |> mask(target_provinces)
+
+dem_df <- as.data.frame(dem_clipped, xy = TRUE)
+colnames(dem_df) <- c("x", "y", "elevation")
+
+plot(dem_clipped)
+```
+
+
+## B. Map
+```{r map, echo = TRUE, warning = TRUE, fig.align = "center"}
+ggplot() +
+  geom_tile(data = dem_df, aes(x = x, y = y, fill = elevation)) +
+ scale_fill_gradientn(
+    colors = c("#1a4d2e", "#4f772d", "#90a955", "#ecf39e", "#f3c68f", "#ee6c4d", "#c32f27"),
+    values = c(0, 0.05, 0.15, 0.30, 0.50, 0.75, 1.0), 
+    name = "Elevation (m)"
+  ) +
+
+  geom_sf(data = target_provinces, fill = NA, 
+          color = "gray30", 
+          linewidth = 0.1) +
+  
+  geom_point(data = clean_data, aes(x = decimalLongitude, y = decimalLatitude), 
+             shape = 21, 
+             fill = "hotpink", 
+             color = "black", 
+             size = 2.0, 
+             stroke = 0.5) +
+
+  coord_sf() + 
+  labs(title = expression(paste("National Distribution of ", italic("Pelodiscus sinensis"))),
+       subtitle = "GBIF Data Philippines",
+       x = "Longitude (°E)", y = "Latitude (°N)" +
+  
+  theme_linedraw() +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5),
+    panel.background = element_rect(fill = "aliceblue"),
+    panel.grid.major = element_line(color = "gray90", 
+                                    linetype = "dashed", 
+                                    linewidth = 0.3)
+  ))
+
+
+ggsave("philippines_distribution_map.pdf", 
+       width = 8, 
+       height = 11, 
+       units = "in", 
+       dpi = 300)
